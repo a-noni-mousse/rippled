@@ -113,10 +113,8 @@ doTxPostgres(RPC::Context& context, TxArgs const& args)
                 assert(false);
                 return {res, {rpcINTERNAL, "Error deserializing SHAMap node"}};
             }
-            std::string reason;
-            res.txn = std::make_shared<Transaction>(sttx, reason, context.app);
-            res.txn->setLedger(locator.getLedgerSequence());
-            res.txn->setStatus(COMMITTED);
+            res.txn = std::make_shared<Transaction>(
+                sttx, COMMITTED, locator.getLedgerSequence());
             if (args.binary)
             {
                 SerialIter it(item->slice());
@@ -287,7 +285,7 @@ populateProtoResponse(
     {
         auto& txn = result.txn;
 
-        std::shared_ptr<STTx const> stTxn = txn->getSTransaction();
+        std::shared_ptr<STTx const> stTxn = txn->getSerializedTx();
         if (args.binary)
         {
             Serializer s = stTxn->getSerializer();
@@ -374,7 +372,8 @@ populateJsonResponse(
     // no errors
     else if (result.txn)
     {
-        response = result.txn->getJson(JsonOptions::include_date, args.binary);
+        response = result.txn->getJson(
+            context.app, JsonOptions::include_date, args.binary);
 
         // populate binary metadata
         if (auto blob = std::get_if<Blob>(&result.meta))

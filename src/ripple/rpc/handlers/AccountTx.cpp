@@ -382,7 +382,7 @@ populateProtoResponse(
 
                     RPC::convert(
                         *txnProto->mutable_transaction(),
-                        txn->getSTransaction());
+                        txn->getSerializedTx());
 
                     // account_tx always returns validated data
                     txnProto->set_validated(true);
@@ -402,7 +402,7 @@ populateProtoResponse(
                         {
                             if (auto amt = getDeliveredAmount(
                                     context,
-                                    txn->getSTransaction(),
+                                    txn->getSerializedTx(),
                                     *txnMeta,
                                     txn->getLedger()))
                             {
@@ -488,7 +488,8 @@ populateJsonResponse(
                 {
                     Json::Value& jvObj = jvTxns.append(Json::objectValue);
 
-                    jvObj[jss::tx] = txn->getJson(JsonOptions::include_date);
+                    jvObj[jss::tx] =
+                        txn->getJson(context.app, JsonOptions::include_date);
                     if (txnMeta)
                     {
                         jvObj[jss::meta] =

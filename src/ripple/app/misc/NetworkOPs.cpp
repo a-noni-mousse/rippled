@@ -1169,9 +1169,7 @@ NetworkOPsImp::submitTransaction(std::shared_ptr<STTx const> const& iTrans)
         return;
     }
 
-    std::string reason;
-
-    auto tx = std::make_shared<Transaction>(trans, reason, app_);
+    auto tx = std::make_shared<Transaction>(trans);
 
     m_job_queue.addJob(jtTRANSACTION, "submitTxn", [this, tx]() {
         auto t = tx;
@@ -1204,7 +1202,7 @@ NetworkOPsImp::processTransaction(
     auto const view = m_ledgerMaster.getCurrentLedger();
     auto const [validity, reason] = checkValidity(
         app_.getHashRouter(),
-        *transaction->getSTransaction(),
+        *transaction->getSerializedTx(),
         view->rules(),
         app_.config());
     assert(validity == Validity::Valid);
@@ -1340,7 +1338,7 @@ NetworkOPsImp::apply(std::unique_lock<std::mutex>& batchLock)
                         flags |= tapFAIL_HARD;
 
                     auto const result = app_.getTxQ().apply(
-                        app_, view, e.transaction->getSTransaction(), flags, j);
+                        app_, view, e.transaction->getSerializedTx(), flags, j);
                     e.result = result.first;
                     e.applied = result.second;
                     changed = changed || result.second;
@@ -1363,7 +1361,7 @@ NetworkOPsImp::apply(std::unique_lock<std::mutex>& batchLock)
             if (e.applied)
             {
                 pubProposedTransaction(
-                    newOL, e.transaction->getSTransaction(), e.result);
+                    newOL, e.transaction->getSerializedTx(), e.result);
                 e.transaction->setApplied();
             }
 
@@ -1393,13 +1391,12 @@ NetworkOPsImp::apply(std::unique_lock<std::mutex>& batchLock)
                     << "Transaction is now included in open ledger";
                 e.transaction->setStatus(INCLUDED);
 
-                auto const& txCur = e.transaction->getSTransaction();
+                auto const& txCur = e.transaction->getSerializedTx();
                 auto const txNext = m_ledgerMaster.popAcctTransaction(txCur);
                 if (txNext)
                 {
-                    std::string reason;
                     auto const trans = sterilize(*txNext);
-                    auto t = std::make_shared<Transaction>(trans, reason, app_);
+                    auto t = std::make_shared<Transaction>(trans);
                     submit_held.emplace_back(t, false, false, FailHard::no);
                     t->setApplying();
                 }
@@ -1450,7 +1447,7 @@ NetworkOPsImp::apply(std::unique_lock<std::mutex>& batchLock)
             {
                 m_localTX->push_back(
                     m_ledgerMaster.getCurrentLedgerIndex(),
-                    e.transaction->getSTransaction());
+                    e.transaction->getSerializedTx());
                 e.transaction->setKept();
             }
 
@@ -1468,7 +1465,7 @@ NetworkOPsImp::apply(std::unique_lock<std::mutex>& batchLock)
                     protocol::TMTransaction tx;
                     Serializer s;
 
-                    e.transaction->getSTransaction()->add(s);
+                    e.transaction->getSerializedTx()->add(s);
                     tx.set_rawtransaction(s.data(), s.size());
                     tx.set_status(protocol::tsCURRENT);
                     tx.set_receivetimestamp(
@@ -1484,7 +1481,7 @@ NetworkOPsImp::apply(std::unique_lock<std::mutex>& batchLock)
             {
                 auto [fee, accountSeq, availableSeq] =
                     app_.getTxQ().getTxRequiredFeeAndSeq(
-                        *newOL, e.transaction->getSTransaction());
+                        *newOL, e.transaction->getSerializedTx());
                 e.transaction->setCurrentLedgerState(
                     *validatedLedgerIndex, fee, accountSeq, availableSeq);
             }
@@ -3459,7 +3456,7 @@ NetworkOPsImp::addAccountHistoryJob(SubAccountHistoryInfoWeak subInfo)
                  */
                 if (accountId == genesisAccountId)
                 {
-                    auto stx = tx->getSTransaction();
+                    auto stx = tx->getSerializedTx();
                     if (stx->getAccountID(sfAccount) == accountId &&
                         stx->getSeqProxy().value() == 1)
                         return true;
@@ -3646,13 +3643,13 @@ NetworkOPsImp::addAccountHistoryJob(SubAccountHistoryInfoWeak subInfo)
                             return;
                         }
                         std::shared_ptr<STTx const> stTxn =
-                            tx->getSTransaction();
+                            tx->getSerializedTx();
                         if (!stTxn)
                         {
                             JLOG(m_journal.debug())
                                 << "AccountHistory job for account "
                                 << toBase58(accountId)
-                                << " getSTransaction failed.";
+                                << " getSerializedTx failed.";
                             send(rpcError(rpcINTERNAL), true);
                             return;
                         }

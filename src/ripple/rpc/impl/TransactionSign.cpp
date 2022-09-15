@@ -561,12 +561,11 @@ transactionConstructImpl(
     // Turn the passed in STTx into a Transaction.
     Transaction::pointer tpTrans;
     {
-        std::string reason;
-        tpTrans = std::make_shared<Transaction>(stpTrans, reason, app);
+        tpTrans = std::make_shared<Transaction>(stpTrans);
         if (tpTrans->getStatus() != NEW)
         {
-            ret.first = RPC::make_error(
-                rpcINTERNAL, "Unable to construct transaction: " + reason);
+            ret.first =
+                RPC::make_error(rpcINTERNAL, "Unable to construct transaction");
             return ret;
         }
     }
@@ -578,7 +577,7 @@ transactionConstructImpl(
         // passed-in STTx.
         {
             Serializer s;
-            tpTrans->getSTransaction()->add(s);
+            tpTrans->getSerializedTx()->add(s);
             Blob transBlob = s.getData();
             SerialIter sit{makeSlice(transBlob)};
 
@@ -597,14 +596,10 @@ transactionConstructImpl(
                 return ret;
             }
 
-            std::string reason;
-            auto tpTransNew =
-                std::make_shared<Transaction>(sttxNew, reason, app);
-
-            if (tpTransNew)
+            if (auto tpTransNew = std::make_shared<Transaction>(sttxNew))
             {
-                if (!tpTransNew->getSTransaction()->isEquivalent(
-                        *tpTrans->getSTransaction()))
+                if (!tpTransNew->getSerializedTx()->isEquivalent(
+                        *tpTrans->getSerializedTx()))
                 {
                     tpTransNew.reset();
                 }
@@ -629,14 +624,14 @@ transactionConstructImpl(
 }
 
 static Json::Value
-transactionFormatResultImpl(Transaction::pointer tpTrans)
+transactionFormatResultImpl(Application& app, Transaction::pointer tpTrans)
 {
     Json::Value jvResult;
     try
     {
-        jvResult[jss::tx_json] = tpTrans->getJson(JsonOptions::none);
+        jvResult[jss::tx_json] = tpTrans->getJson(app, JsonOptions::none);
         jvResult[jss::tx_blob] =
-            strHex(tpTrans->getSTransaction()->getSerializer().peekData());
+            strHex(tpTrans->getSerializedTx()->getSerializer().peekData());
 
         if (temUNCERTAIN != tpTrans->getResult())
         {
@@ -796,7 +791,7 @@ transactionSign(
     if (!txn.second)
         return txn.first;
 
-    return transactionFormatResultImpl(txn.second);
+    return transactionFormatResultImpl(app, txn.second);
 }
 
 /** Returns a Json::objectValue. */
@@ -842,7 +837,7 @@ transactionSubmit(
             rpcINTERNAL, "Exception occurred during transaction submission.");
     }
 
-    return transactionFormatResultImpl(txn.second);
+    return transactionFormatResultImpl(app, txn.second);
 }
 
 namespace detail {
@@ -1032,7 +1027,7 @@ transactionSignFor(
     if (!txn.second)
         return txn.first;
 
-    return transactionFormatResultImpl(txn.second);
+    return transactionFormatResultImpl(app, txn.second);
 }
 
 /** Returns a Json::objectValue. */
@@ -1224,7 +1219,7 @@ transactionSubmitMultiSigned(
             rpcINTERNAL, "Exception occurred during transaction submission.");
     }
 
-    return transactionFormatResultImpl(txn.second);
+    return transactionFormatResultImpl(app, txn.second);
 }
 
 }  // namespace RPC
