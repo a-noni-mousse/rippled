@@ -116,23 +116,29 @@ OpenLedger::accept(
     for (auto const& item : locals)
         app.getTxQ().apply(app, *next, item.second, flags, j_);
 
-    // If we didn't relay this transaction recently, relay it to all peers
-    for (auto const& txpair : next->txs)
-    {
-        auto const& tx = txpair.first;
-        auto const txId = tx->getTransactionID();
-        if (auto const toSkip = app.getHashRouter().shouldRelay(txId))
-        {
-            JLOG(j_.debug()) << "Relaying recovered tx " << txId;
-            protocol::TMTransaction msg;
-            Serializer s;
+    // If we didn't relay some transactions recently, relay it to all peers
+    // in background thread.
+    if (!next->txs.empty()) {
+        std::thread relay([&app,next]() {
+            for (auto const& txpair : next->txs)
+            {
+                auto const& tx = txpair.first;
+                auto const txId = tx->getTransactionID();
+                if (auto const toSkip = app.getHashRouter().shouldRelay(txId))
+                {
+                    JLOG(j_.debug()) << "Relaying recovered tx " << txId;
+                    protocol::TMTransaction msg;
+                    Serializer s;
 
-            tx->add(s);
-            msg.set_rawtransaction(s.data(), s.size());
-            msg.set_status(protocol::tsNEW);
-            msg.set_receivetimestamp(
-                app.timeKeeper().now().time_since_epoch().count());
-            app.overlay().relay(txId, msg, *toSkip);
+                    tx->add(s);
+                    msg.set_rawtransaction(s.data(), s.size());
+                    msg.set_status(protocol::tsNEW);
+                    msg.set_receivetimestamp(
+                        app.timeKeeper().now().time_since_epoch().count());
+                    app.overlay().relay(txId, msg, *toSkip);
+                }
+            });
+            relay.detach();
         }
     }
 
